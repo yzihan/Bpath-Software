@@ -1,0 +1,68 @@
+{
+  "name": "xslide",
+  "productName": "Xslide",
+  "version": "0.1.0",
+  "description": "An application that can quickly view large images like .tif, .svs, .bif, .hdpi, .vms and .mrxs file(s).",
+  "repository": "hurryhuang1007/Xslide",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "install": "npm run rebuild",
+    "rebuild": "cd ./node_modules/.bin && electron-rebuild -f --module-dir=../../",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "productName": "Xslide",
+    "appId": "com.electron.Xslide",
+    "copyright": "Copyright © 2019 Hurry",
+    "asar": false,
+    "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip"
+        }
+      ],
+      "publish": [
+        "github"
+      ]
+    }
+  },
+  "dependencies": {
+    "electron-is-dev": "^1.1.0",
+    "ffi": "^2.3.0",
+    "ref": "^1.3.5",
+    "ref-array": "^1.2.0",
+    "ref-struct": "^1.1.0",
+    "serve-handler": "^6.1.3",
+    "weak": "^1.0.1"
+  },
+  "devDependencies": {
+    "electron": "^3.1.9",
+    "electron-builder": "^21.2.0",
+    "electron-rebuild": "^2.3.5"
+  },
+  "keywords": [
+    "tiff",
+    "svs",
+    "mrxs",
+    "openslide",
+    "vips",
+    "viewer"
+  ],
+  "author": "Hurry",
+  "license": "MIT"
+}

@@ -1,0 +1,40 @@
+.gazer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+
+    backdrop-filter: satuate(150%) blur(20px);
+    background: rgba(0,0,0,0.8);
+    color: #ffffff;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+.gazer * {
+    pointer-events: none;
+    user-select: none;
+}
+.gazer .skip-button {
+    pointer-events: all;
+    margin: 0;
+    padding: 0;
+    border: none;
+    font-size: inherit;
+    outline: none;
+    text-decoration: underline;
+    color: #ffffff;
+    background: transparent;
+}
+.gazer .skip-button:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+.gazer-calib-button {
+    user-select: none;
+    pointer-events: all;
+    position: fixed;
+    z-index: 999;
+}
