@@ -43,16 +43,67 @@ export default class Viewer extends React.Component {
   _focus_history=[]
   _focus0=null;
 
+  _sel_history = [];
   _selection = [];
   _curSelection = null;
   _lastSelectTimestamp = -Infinity;
+
+  scaleLimit = 10;
+
+  setScaleLimit = (lim) => {
+    this.scaleLimit = lim;
+    this._changed = true;
+  }
+
+  getCurrentScale = () => {
+    let windowscale = 1;
+    if(this._infos) {
+      let { width, height } = this.refs.canvas
+      if (this._degree % 180 !== 0) [width, height] = [height, width]
+      if(this._infos.width / this._infos.height < width / height) {
+        // 96 * 25.4 -> dot/mm
+        // ... * devicePixelRatio -> physical pixel/mm
+        // 1000 * height / ... -> display height in um
+        // mpp-y * infos.height -> imaging height in um (from data of layer 0)
+        windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
+      } else {
+        windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
+      }
+    }
+   
+    return windowscale * this._zoom;
+  }
+
+  _ensureScaleLimit = () => {
+    let windowscale = 1;
+    if(this._infos) {
+      let { width, height } = this.refs.canvas
+      if (this._degree % 180 !== 0) [width, height] = [height, width]
+      if(this._infos.width / this._infos.height < width / height) {
+        // 96 * 25.4 -> dot/mm
+        // ... * devicePixelRatio -> physical pixel/mm
+        // 1000 * height / ... -> display height in um
+        // mpp-y * infos.height -> imaging height in um (from data of layer 0)
+        windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
+      } else {
+        windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
+      }
+    }
+    if(this._zoom * windowscale > this.scaleLimit) {
+      this._zoom = this.scaleLimit / windowscale;
+    }
+  }
 
   componentDidMount() {
     window.viewer = this
     this._resize()
     this._init(this.props.tilePath)
     this._initListener()
+    this.props.registerResolutionLimitCallback(this.setScaleLimit);
+    setTimeout(this._ensureScaleLimit, 10);
   }
+
+
 
   componentDidUpdate(pp, ps) {
     if (pp.layoutWidth !== this.props.layoutWidth || pp.layoutHeight !== this.props.layoutHeight) this._resize()
@@ -67,6 +118,7 @@ export default class Viewer extends React.Component {
   }
 
   componentWillUnmount() {
+    this.props.unregisterResolutionLimitCallback(this.setScaleLimit);
     delete window.viewer
     this._destroyListener()
     this._destroy()
@@ -75,14 +127,48 @@ export default class Viewer extends React.Component {
   savejson(){
 
     let filename = 'focus_history.json'
+    let data;
 
-    let data = JSON.stringify({
-      // infos: this._infos, // information from tile_path. Since the image is what we provided, info is redundent.
-      tile_path: this._tilePath,
-      focus0: this._focus0,
-      focus_history: this._focus_history,
-      gazer_status: this.props.gazerStatus,
-    })
+    if(this.props.gazerStatus) {
+      const {base_time, history, mouse_clicks, recorder_chunks, stop_recorder, recorder} = this.props.gazerStatus;
+
+      data = JSON.stringify({
+        // infos: this._infos, // information from tile_path. Since the image is what we provided, info is redundent.
+        tile_path: this._tilePath,
+        focus0: this._focus0,
+        focus_history: this._focus_history,
+        selection_history: this._sel_history,
+        gazer_status: {
+          base_time, history, mouse_clicks
+        },
+      })
+
+      stop_recorder().then(() => {
+        let blob = new Blob(recorder_chunks, { 'type' : recorder().mimeType });
+        let e = document.createEvent('MouseEvents')
+  
+        let a = document.createElement('a')
+  
+        a.download = filename + '.webm'
+  
+        a.href = window.URL.createObjectURL(blob)
+  
+        // a.dataset.downloadurl = ['text/json', a.download, a.href].join(':')
+  
+        e.initMouseEvent('click', true, false, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null)
+  
+        a.dispatchEvent(e)
+      })
+    } else {
+      data = JSON.stringify({
+        // infos: this._infos, // information from tile_path. Since the image is what we provided, info is redundent.
+        tile_path: this._tilePath,
+        focus0: this._focus0,
+        focus_history: this._focus_history,
+        selection_history: this._sel_history,
+        gazer_status: null,
+      })
+    }
 
 
     let blob = new Blob([data], {type: 'text/json'}),
@@ -132,6 +218,11 @@ export default class Viewer extends React.Component {
       } else {
         // this._infos = JSON.parse(JSON.stringify(await vipsFn.getInfos(tilePath)))
         this._infos = await vipsFnPromise('getInfos', [tilePath])
+        if(!('openslide.mpp-x' in this._infos)) {
+          alert('Warning!!! ' + this._infos['filename'] + ' has no built-in resolution information. Assuming 0.025um/px, i.e. 400x');
+          this._infos['openslide.mpp-x'] = 0.025;
+          this._infos['openslide.mpp-y'] = 0.025;
+        }
         this._infos.k = (canvas.width / canvas.height) / (this._infos.width / this._infos.height) > 1 ? 'height' : 'width'
         let k = (screenSize.width / screenSize.height) / (this._infos.width / this._infos.height) > 1 ? 'height' : 'width'
         let downSample = this._infos[k] / screenSize[k]
@@ -200,7 +291,7 @@ export default class Viewer extends React.Component {
     dh = sh / downSample
 
     // https://developer.mozilla.org/zh-CN/docs/Web/API/CanvasRenderingContext2D/drawImage
-    ctx.drawImage(this._thumbnail, sx, sy, sw, sh, dx, dy, dw, dh)
+    ctx.drawImage(this._thumbnail, sx, sy, sw, sh, dx, dy, dw, dh);
     //console.log(sx, sy, '\n', sw, sh, '\n', dx, dy, '\n', dw, dh)
     // console.timeEnd('renderThumbnail')
     let focus_x=sx+sw/2
@@ -444,6 +535,7 @@ export default class Viewer extends React.Component {
   _click_type(type = 'confirm') {
     if(this._curSelection) {
       this._curSelection.type = type;
+      this._sel_history.push({'ts': new Date().valueOf, 'sel': this._curSelection});
       this._selection.push(this._curSelection);
       this._curSelection = null;
       this._renderSelections();
@@ -621,7 +713,7 @@ export default class Viewer extends React.Component {
       const [tx, ty] = this._cvtCoord_Screen2ImageRel(e.clientX, e.clientY);
       this._curSelection.x2 = tx;
       this._curSelection.y2 = ty;
-      if((this._curSelection.x1 == this._curSelection.x2) && (this._curSelection.y1 == this._curSelection.y2)) {
+      if((this._curSelection.x1 === this._curSelection.x2) && (this._curSelection.y1 === this._curSelection.y2)) {
         this._curSelection.x1 -= 0.01;
         this._curSelection.y1 -= 0.01;
         this._curSelection.x2 += 0.01;
@@ -633,6 +725,8 @@ export default class Viewer extends React.Component {
 
   _animate = () => {
     if (this._changed) {
+      this._ensureScaleLimit();
+
       this._renderThumbnail()
       this._searchAndRenderTile()
       this._changed = false
@@ -648,6 +742,14 @@ export default class Viewer extends React.Component {
       this._renderCurrentSelection();
     }
     this._animateId = window.requestAnimationFrame(this._animate)
+    const curScale = this.getCurrentScale();
+    if(curScale >= 10) {
+      this.refs.scalingval.innerText = curScale.toFixed(1) + 'x';
+    } else if(curScale >= 1) {
+      this.refs.scalingval.innerText = curScale.toFixed(2) + 'x';
+    } else {
+      this.refs.scalingval.innerText = curScale.toFixed(3) + 'x';
+    }
   }
 
   _resize() {
@@ -665,6 +767,7 @@ export default class Viewer extends React.Component {
     this._left = 0
     this._top = 0
     this._changed = true
+    this._ensureScaleLimit()
   }
 
   rotate(isClockwise = true) {
@@ -689,7 +792,7 @@ export default class Viewer extends React.Component {
     return (
       <div ref='mainDOM' style={{ position: 'relative', width: this.props.layoutWidth, height: this.props.layoutHeight }} >
         <canvas ref='canvas' />
-        <div ref='currentsel' style={{ position: 'fixed', width: 100, height: 100, left: 0, top: 0, display: 'none', border: '2px solid blue', pointerEvents: 'none'}} />
+        <div ref='currentsel' style={{ position: 'fixed', width: 100, height: 100, left: 0, top: 50, display: 'none', border: '2px solid blue', pointerEvents: 'none'}} />
         <div ref='dropmenu' style={{ position: 'fixed', left: 0, top: 0, border: '1px solid #666666', background: '#ffffff88'}}>
           <button ref='confirm_button'>Confirm</button>
           <button ref='typea_button'>Type-A</button>
@@ -697,6 +800,7 @@ export default class Viewer extends React.Component {
           <button ref='typec_button'>Type-C</button>
           <button ref='cancel_button'>Cancel</button>
         </div>
+        <div ref='scalingval' style={{ position: 'fixed', width: '100vw', fontSize: 50, height: 50, left: 0, top: 50, display: 'block', pointerEvents: 'none'}}></div>
         <StateCover {...this.state} />
       </div>
     )

@@ -4,6 +4,8 @@ import Init from '../Init/Index'
 import Main from '../Main/Index'
 import webgazer from 'webgazer';
 import './Index.css';
+// import '@tensorflow/tfjs-backend-webgl';
+// import '@tensorflow/tfjs-backend-cpu';
 const remote = global.nodeRequire('electron').remote
 
 const Gazer = ({setGazerStatus}) => {
@@ -17,6 +19,62 @@ const Gazer = ({setGazerStatus}) => {
     window.applyKalmanFilter = true;
     window.saveDataAcrossSessions = false;
     window.webgazer = webgazer;
+
+    const old_gum = (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+    const rec_stat = {
+      chunks: [],
+      stop: ()=>{},
+      rec: null,
+    };
+
+    if(!navigator.mediaDevices) {
+      navigator.mediaDevices = {};
+    }
+    navigator.mediaDevices.getUserMedia = function(constraint) {
+      return new Promise((resolve, reject) => {
+        old_gum.call(this, constraint).then((stream) => {
+          let recorder = new MediaRecorder(stream);
+          recorder.ondataavailable = (e) => {
+            rec_stat.chunks.push(e.data);
+          }
+          const stopProm = new Promise((resolve, reject) => {
+            recorder.onstop = function(e) {
+              console.log("data available after MediaRecorder.stop() called.");
+              resolve(e);
+            }
+            recorder.onerror = (ev) => {
+              let e = ev.error;
+              console.warn(e);
+              switch(e.name) {
+                case 'InvalidStateError':
+                  alert("You can't record the video right " +
+                                   "now. Try again later.");
+                  break;
+                case 'SecurityError':
+                  alert("Recording the specified source " +
+                                   "is not allowed due to security " +
+                                   "restrictions.");
+                  break;
+                default:
+                  alert("A problem occurred while trying " +
+                                   "to record the video: " + e.name);
+                  break;
+              }
+              reject(e);
+            }
+          })
+          rec_stat.stop = () => {
+            console.log('Stopping MediaRecorder');
+            rec_stat.rec.stop();
+            return stopProm
+          }
+          rec_stat.rec = recorder;
+          recorder.start();
+          resolve(stream)
+        }, reject);
+      })
+    }
+
     const startUp = (async () => {
       webgazer.params.showVideoPreview = true;
 
@@ -32,10 +90,14 @@ const Gazer = ({setGazerStatus}) => {
         setCalibrationPosition([]);
 
         console.log('Starting eye tracking...');
+
         const gazerStat = {
           base_time: null,
           history: [],
           mouse_clicks: [],
+          recorder_chunks: rec_stat.chunks,
+          stop_recorder: () => { return rec_stat.stop() },
+          recorder: () => { return rec_stat.rec },
         };
         const mouse_callback = (e) => {
           if(calibrationEnabled.value) {
