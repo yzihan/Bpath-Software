@@ -1,24 +1,25 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { supportFileType, getFileTypeByURL } from '../../core'
 import Init from '../Init/Index'
 import Main from '../Main/Index'
-import webgazer from 'webgazer';
+// import webgazer from 'webgazer';
 import './Index.css';
 // import '@tensorflow/tfjs-backend-webgl';
 // import '@tensorflow/tfjs-backend-cpu';
 const remote = global.nodeRequire('electron').remote
 
 const Gazer = ({setGazerStatus}) => {
-  const [calibrationSkipable, setCalibrationSkipable] = useState(null);
-  const [calibrationPosition, setCalibrationPosition] = useState(null);
+  // const [calibrationSkipable, setCalibrationSkipable] = useState(null);
+  // const [calibrationPosition, setCalibrationPosition] = useState(null);
 
-  let [calibrationEnabled] = useState({ gazerReady: false, value: false });
-  let [gazerReady, setGazerReady] = useState(false);
+  // let [calibrationEnabled] = useState({ gazerReady: false, value: false });
+  // let [gazerReady, setGazerReady] = useState(false);
+
+  const videoObj = useRef();
 
   useEffect(() => {
     window.applyKalmanFilter = true;
     window.saveDataAcrossSessions = false;
-    window.webgazer = webgazer;
 
     const old_gum = (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
     const rec_stat = {
@@ -76,155 +77,61 @@ const Gazer = ({setGazerStatus}) => {
     }
 
     const startUp = (async () => {
-      webgazer.params.showVideoPreview = true;
-
       if(remote.dialog.showMessageBox(remote.getCurrentWindow(), {
         type: 'info',
-        title: 'Eye tracking',
-        message: 'We are asking permission for accessing web cams to track your gaze target.\nThis function need to download model from storage.googleapis.com, and may slow down your computer. Do you want to enable it?',
-        buttons: ['Enable eye tracking', 'Keep eye tracking disabled'],
+        title: 'Camera permission',
+        message: 'We are asking permission for accessing web cams to record your gaze target.\nDo you want to enable it?',
+        buttons: ['Enable recording', 'Keep recording disabled'],
         defaultId: 0,
         cancelId: 1
       }) === 0) {
-        setCalibrationSkipable(webgazer.getRegression()[0].getData().length >= 30);
-        setCalibrationPosition([]);
-
-        console.log('Starting eye tracking...');
+        console.log('Starting recording...');
 
         const gazerStat = {
           base_time: null,
-          history: [],
-          mouse_clicks: [],
+          history: [], mouse_clicks: [],
           recorder_chunks: rec_stat.chunks,
           stop_recorder: () => { return rec_stat.stop() },
           recorder: () => { return rec_stat.rec },
         };
-        const mouse_callback = (e) => {
-          if(calibrationEnabled.value) {
-            webgazer.recordScreenPosition(e.clientX, e.clientY, webgazer.params.getEventTypes()[0]);
-          }
-          gazerStat.mouse_clicks.push({ x: e.clientX, y: e.clientY });
-        }
-        gazerStat.base_time = new Date().valueOf();
-        let last_time = { value: 0, counter: 5 };
+
         try {
-          await webgazer.setRegression('ridge')
-            .showVideo(true)
-            .showFaceOverlay(true)
-            .showFaceFeedbackBox(true)
-            .showPredictionPoints(true)
-            .setGazeListener(function(data, elapsedTime) {
-              if(!calibrationEnabled.gazerReady) {
-                console.log('gazer prediction timeout', elapsedTime - last_time.value);
-                if(elapsedTime - last_time.value < 500) {
-                  last_time.counter -= 1;
-                  if(last_time.counter <= 0) {
-                    setGazerReady(true);
-                    calibrationEnabled.gazerReady = true;
-                    calibrationEnabled.value = true;
-                    console.log('gazer seems to be stable, enabling calibration');
-                  }
-                } else {
-                  last_time.counter = 5;
-                }
-                last_time.value = elapsedTime;
-              }
-              if (data == null) {
-                  return;
-              }
-
-              gazerStat.history.push({ x: data.x, y: data.y, elapsedTime });
-            })
-            .begin(() => {
-              console.log('webgazer failed!');
-            });
+          let stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user" } });
+          var video = videoObj.current;
+          video.srcObject = stream;
+          video.onloadedmetadata = function(e) {
+            video.play();
+            gazerStat.base_time = new Date().valueOf();
+          };
         } catch(e) {
-          console.log('Init webgazer error', e);
+          console.log(e);
+          alert('Error: ' + e);
         }
+
         setGazerStatus(gazerStat);
-        // setCalibrationSkipable(webgazer.getRegression()[0].getData().length >= 30);
 
-        setCalibrationSkipable(false);
-        webgazer.clearData();
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10000);
+        });
 
-        const points = [];
-        for(let i = 10; i <= 90; i += 16) {
-          for(let j = 10; j <= 90; j += 16) {
-            points.push({ x: i, y: j });
-          }
-        }
-        for (let i = points.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [points[i], points[j]] = [points[j], points[i]];
-        }
+        videoObj.current.style.opacity = 0;
 
-        setCalibrationPosition(points);
-
-        webgazer.removeMouseEventListeners();
-        document.addEventListener('click', mouse_callback);
-        return () => {
-          document.removeEventListener('click', mouse_callback);
-        }
       } else {
-        console.log('Eye tracking disabled.');
+        console.log('Eye recording disabled.');
       }
+      return () => {}
     })();
 
     return () => {
       startUp.then((v) => {
-        webgazer.end();
         v();
       })
     }
-  }, [setGazerStatus, calibrationEnabled, setGazerReady]);
+  }, [setGazerStatus]);
 
-  const stopCalibration = useCallback(() => {
-    webgazer
-      .showVideo(false)
-      .showFaceOverlay(false)
-      .showFaceFeedbackBox(false)
-      .showPredictionPoints(false);
-    calibrationEnabled.value = false;
-    setCalibrationPosition(null);
-  }, [setCalibrationPosition, calibrationEnabled]);
-
-  const nextCalibration = useCallback(() => {
-    calibrationPosition.shift();
-    if(calibrationPosition.length === 0) {
-      stopCalibration();
-    } else {
-      setCalibrationPosition([ ...calibrationPosition ]);
-    }
-  }, [calibrationPosition, setCalibrationPosition, stopCalibration]);
-
-  if(Array.isArray(calibrationPosition)) {
-    return (
-      <>
-        <div className="gazer">
-          <h2>Calibrate eye tracker</h2>
-          {/* <span>Please calibrate eye tracking module before next step.</span> */}
-          <span>Click the buttons while looking at the cursor until this overlay disappears.</span>
-          {
-            calibrationSkipable
-              ? <span>You may <button className="skip-button" onClick={stopCalibration}>skip calibration</button> if you haven't move wildly since last experiment</span>
-              : undefined
-          }
-          {
-            !gazerReady
-              ? <span>Gazer initializing...please wait</span>
-              : undefined
-          }
-        </div>
-        {
-          gazerReady && (calibrationPosition.length > 0)
-            ? <button className="gazer-calib-button" style={{left: calibrationPosition[0].x+'%', top: calibrationPosition[0].y+'%'}} onClick={nextCalibration}>Here</button>
-            : undefined
-        }
-      </>
-    );
-  } else {
-    return <></>;
-  }
+  return (<>
+    <video ref={videoObj} width="320" height="240" style={{position: 'fixed', left: 0, top: 50, opacity: 1, transition: '3s', pointerEvents: 'none'}} muted autoPlay></video>
+  </>);
 }
 
 export default class App extends React.Component {

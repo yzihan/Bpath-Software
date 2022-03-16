@@ -512,9 +512,9 @@ export default class Viewer extends React.Component {
     window.addEventListener('mousemove', this._mouseMove)
     window.addEventListener('mouseup', this._mouseUp)
     this.refs.confirm_button.addEventListener('click', this._click_confirm)
-    this.refs.typea_button.addEventListener('click', this._click_typea)
-    this.refs.typeb_button.addEventListener('click', this._click_typeb)
-    this.refs.typec_button.addEventListener('click', this._click_typec)
+    // this.refs.typea_button.addEventListener('click', this._click_typea)
+    // this.refs.typeb_button.addEventListener('click', this._click_typeb)
+    // this.refs.typec_button.addEventListener('click', this._click_typec)
     this.refs.cancel_button.addEventListener('click', this._click_cancel)
     this._animate()
   }
@@ -525,9 +525,9 @@ export default class Viewer extends React.Component {
     window.removeEventListener('mousemove', this._mouseMove)
     window.removeEventListener('mouseup', this._mouseUp)
     this.refs.confirm_button.removeEventListener('click', this._click_confirm)
-    this.refs.typea_button.removeEventListener('click', this._click_typea)
-    this.refs.typeb_button.removeEventListener('click', this._click_typeb)
-    this.refs.typec_button.removeEventListener('click', this._click_typec)
+    // this.refs.typea_button.removeEventListener('click', this._click_typea)
+    // this.refs.typeb_button.removeEventListener('click', this._click_typeb)
+    // this.refs.typec_button.removeEventListener('click', this._click_typec)
     this.refs.cancel_button.removeEventListener('click', this._click_cancel)
     window.cancelAnimationFrame(this._animateId)
   }
@@ -535,7 +535,7 @@ export default class Viewer extends React.Component {
   _click_type(type = 'confirm') {
     if(this._curSelection) {
       this._curSelection.type = type;
-      this._sel_history.push({'ts': new Date().valueOf, 'sel': this._curSelection});
+      this._sel_history.push({'ts': new Date().valueOf(), 'sel': this._curSelection});
       this._selection.push(this._curSelection);
       this._curSelection = null;
       this._renderSelections();
@@ -795,12 +795,12 @@ export default class Viewer extends React.Component {
         <div ref='currentsel' style={{ position: 'fixed', width: 100, height: 100, left: 0, top: 50, display: 'none', border: '2px solid blue', pointerEvents: 'none'}} />
         <div ref='dropmenu' style={{ position: 'fixed', left: 0, top: 0, border: '1px solid #666666', background: '#ffffff88'}}>
           <button ref='confirm_button'>Confirm</button>
-          <button ref='typea_button'>Type-A</button>
+          {/* <button ref='typea_button'>Type-A</button>
           <button ref='typeb_button'>Type-B</button>
-          <button ref='typec_button'>Type-C</button>
+          <button ref='typec_button'>Type-C</button> */}
           <button ref='cancel_button'>Cancel</button>
         </div>
-        <div ref='scalingval' style={{ position: 'fixed', width: '100vw', fontSize: 50, height: 50, left: 0, top: 50, display: 'block', pointerEvents: 'none'}}></div>
+        <div ref='scalingval' style={{ position: 'fixed', width: '100vw', display: 'block', fontSize: 50, height: 50, left: 0, top: 50, pointerEvents: 'none'}}>0.0x</div>
         <StateCover {...this.state} />
       </div>
     )
