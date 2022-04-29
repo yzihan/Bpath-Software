@@ -49,6 +49,7 @@ export default class Viewer extends React.Component {
   _lastSelectTimestamp = -Infinity;
 
   scaleLimit = 10;
+  windowscale = 1;
 
   setScaleLimit = (lim) => {
     this.scaleLimit = lim;
@@ -56,26 +57,27 @@ export default class Viewer extends React.Component {
   }
 
   getCurrentScale = () => {
-    let windowscale = 1;
+    // let windowscale = 1;
     if(this._infos) {
       let { width, height } = this.refs.canvas
       if (this._degree % 180 !== 0) [width, height] = [height, width]
       if(this._infos.width / this._infos.height < width / height) {
-        // 96 * 25.4 -> dot/mm
+        // 96 / 25.4 -> px/mm
         // ... * devicePixelRatio -> physical pixel/mm
         // 1000 * height / ... -> display height in um
         // mpp-y * infos.height -> imaging height in um (from data of layer 0)
-        windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
+        this.windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
       } else {
-        windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
+        this.windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
       }
     }
    
-    return windowscale * this._zoom;
+    // return windowscale * this._zoom;
+    return this._zoom
   }
 
   _ensureScaleLimit = () => {
-    let windowscale = 1;
+    // let windowscale = 1;
     if(this._infos) {
       let { width, height } = this.refs.canvas
       if (this._degree % 180 !== 0) [width, height] = [height, width]
@@ -84,13 +86,16 @@ export default class Viewer extends React.Component {
         // ... * devicePixelRatio -> physical pixel/mm
         // 1000 * height / ... -> display height in um
         // mpp-y * infos.height -> imaging height in um (from data of layer 0)
-        windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
+        this.windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
       } else {
-        windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
+        this.windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
       }
     }
-    if(this._zoom * windowscale > this.scaleLimit) {
-      this._zoom = this.scaleLimit / windowscale;
+    // if(this._zoom * windowscale > this.scaleLimit) {
+    //   this._zoom = this.scaleLimit / windowscale;
+    // }
+    if (this._zoom > this.scaleLimit / 10) {
+      this._zoom = this.scaleLimit / 10
     }
   }
 
@@ -261,6 +266,14 @@ export default class Viewer extends React.Component {
     for (let i = +this._infos['openslide.level-count'] - 1; i > -1; i--) if (+this._infos[`openslide.level[${i}].downsample`] < downSample / scale) return i
   }
 
+  _renderOverview(sx, sy, sw, sh, dw, dh) {
+    let overviewCanvas = this.refs.overview;
+    let ctx = overviewCanvas.getContext('2d');
+    overviewCanvas.width = this.refs.canvas.width / 10;
+    overviewCanvas.height = this.refs.canvas.height / 10;
+    ctx.drawImage(this._thumbnail, sx, sy, sw, sh, 500, 20, dw / 10, dh / 10);
+  }
+
   _renderThumbnail() {
     if (!this._thumbnail) return
     // console.time('renderThumbnail')
@@ -292,6 +305,7 @@ export default class Viewer extends React.Component {
 
     // https://developer.mozilla.org/zh-CN/docs/Web/API/CanvasRenderingContext2D/drawImage
     ctx.drawImage(this._thumbnail, sx, sy, sw, sh, dx, dy, dw, dh);
+    // this._renderOverview(sx, sy, sw, sh);
     //console.log(sx, sy, '\n', sw, sh, '\n', dx, dy, '\n', dw, dh)
     // console.timeEnd('renderThumbnail')
     let focus_x=sx+sw/2
@@ -616,6 +630,10 @@ export default class Viewer extends React.Component {
     }
     [x1, y1] = this._cvtCoord_ImageRel2Canvas(x1, y1);
     [x2, y2] = this._cvtCoord_ImageRel2Canvas(x2, y2);
+    x1 *= devicePixelRatio;
+    y1 *= devicePixelRatio;
+    x2 *= devicePixelRatio;
+    y2 *= devicePixelRatio;
     if(x1 > x2) {
       [x1, x2] = [x2, x1];
     }
@@ -750,6 +768,7 @@ export default class Viewer extends React.Component {
     } else {
       this.refs.scalingval.innerText = curScale.toFixed(3) + 'x';
     }
+    this.updateScaleBottom();
   }
 
   _resize() {
@@ -788,10 +807,24 @@ export default class Viewer extends React.Component {
     return new Promise(res => this.refs.canvas.toBlob(res, `image/${type}`))
   }
 
+  updateScaleBottom = () => {
+    this.refs.scalingvalbottom.innerText = this.refs.scalingval.innerText;
+    const cssPixel = 150;
+    const physicalMM = cssPixel / (96 / 25.4 / devicePixelRatio) / this._zoom / this.windowscale;
+    if (physicalMM <= 0.5) {
+      this.refs.scale.innerText = (1000 * physicalMM).toFixed(2) + 'um';
+    } else {
+      this.refs.scale.innerText = physicalMM.toFixed(2) + 'mm';
+    }
+  }
+
   render() {
     return (
       <div ref='mainDOM' style={{ position: 'relative', width: this.props.layoutWidth, height: this.props.layoutHeight }} >
         <canvas ref='canvas' />
+        <div style={{position: 'fixed', right: '20px', top: '20px'}}>
+          <canvas ref='overview' />
+        </div>
         <div ref='currentsel' style={{ position: 'fixed', width: 100, height: 100, left: 0, top: 50, display: 'none', border: '2px solid blue', pointerEvents: 'none'}} />
         <div ref='dropmenu' style={{ position: 'fixed', left: 0, top: 0, border: '1px solid #666666', background: '#ffffff88'}}>
           <button ref='confirm_button'>Confirm</button>
@@ -801,6 +834,8 @@ export default class Viewer extends React.Component {
           <button ref='cancel_button'>Cancel</button>
         </div>
         <div ref='scalingval' style={{ position: 'fixed', width: '100vw', display: 'block', fontSize: 50, height: 50, left: 0, top: 50, pointerEvents: 'none'}}>0.0x</div>
+        <div ref='scalingvalbottom' style={{ position: 'fixed', width: 150, fontSize: 15, height: 20, left: 10, bottom: 50}}>0.0x</div>
+        <div ref='scale' style={{position: 'fixed', width: 150, height: 20, fontSize: 15, left: 10, bottom: 20, border: '1px solid black', textAlign: 'center'}}>0.00mm</div>
         <StateCover {...this.state} />
       </div>
     )
