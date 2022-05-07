@@ -51,6 +51,14 @@ export default class Viewer extends React.Component {
   scaleLimit = 10;
   windowscale = 1;
 
+  // minibox related
+  initScale = 1;
+  offsetX = 0;
+  offsetY = 0;
+  lastX = 0;
+  lastY = 0;
+  isMouseInMinibox = false;
+
   setScaleLimit = (lim) => {
     this.scaleLimit = lim;
     this._changed = true;
@@ -62,13 +70,13 @@ export default class Viewer extends React.Component {
       let { width, height } = this.refs.canvas
       if (this._degree % 180 !== 0) [width, height] = [height, width]
       if(this._infos.width / this._infos.height < width / height) {
-        // 96 / 25.4 -> px/mm
+        // 25.4 / 96 -> css px/mm
         // ... * devicePixelRatio -> physical pixel/mm
         // 1000 * height / ... -> display height in um
         // mpp-y * infos.height -> imaging height in um (from data of layer 0)
-        this.windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
+        this.windowscale = 1000 * height / (25.4 / 96 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
       } else {
-        this.windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
+        this.windowscale = 1000 * width / (25.4 / 96 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
       }
     }
    
@@ -82,20 +90,22 @@ export default class Viewer extends React.Component {
       let { width, height } = this.refs.canvas
       if (this._degree % 180 !== 0) [width, height] = [height, width]
       if(this._infos.width / this._infos.height < width / height) {
-        // 96 * 25.4 -> dot/mm
+        // 25.4 / 96 -> css px/mm
         // ... * devicePixelRatio -> physical pixel/mm
         // 1000 * height / ... -> display height in um
         // mpp-y * infos.height -> imaging height in um (from data of layer 0)
-        this.windowscale = 1000 * height / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
+        this.windowscale = 1000 * height / (25.4 / 96 * devicePixelRatio) / (this._infos['openslide.mpp-y'] * this._infos.height)
       } else {
-        this.windowscale = 1000 * width / (96 / 25.4 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
+        this.windowscale = 1000 * width / (25.4 / 96 * devicePixelRatio) / (this._infos['openslide.mpp-x'] * this._infos.width)
       }
     }
     // if(this._zoom * windowscale > this.scaleLimit) {
     //   this._zoom = this.scaleLimit / windowscale;
     // }
     if (this._zoom > this.scaleLimit / 10) {
-      this._zoom = this.scaleLimit / 10
+      this._zoom = this.scaleLimit / 10;
+      this._changed = true;
+      this._animate();
     }
   }
 
@@ -242,7 +252,8 @@ export default class Viewer extends React.Component {
           this._thumbnail = await jpgBuffer2ImageAsync(await vipsFnPromise('getImage', [tilePath, { level: this._thumbnailLevel }]))
         }
       }
-      this._renderThumbnail()
+      this._renderThumbnail();
+      this._renderOverview();
       console.log(this.props);
       if(this.props.gazerStatus) {
         this.props.gazerStatus.history.length = 0;  // clear history, so only desired history are logged
@@ -266,12 +277,79 @@ export default class Viewer extends React.Component {
     for (let i = +this._infos['openslide.level-count'] - 1; i > -1; i--) if (+this._infos[`openslide.level[${i}].downsample`] < downSample / scale) return i
   }
 
-  _renderOverview(sx, sy, sw, sh, dw, dh) {
-    let overviewCanvas = this.refs.overview;
-    let ctx = overviewCanvas.getContext('2d');
-    overviewCanvas.width = this.refs.canvas.width / 10;
-    overviewCanvas.height = this.refs.canvas.height / 10;
-    ctx.drawImage(this._thumbnail, sx, sy, sw, sh, 500, 20, dw / 10, dh / 10);
+  _translateMiniboxChange() {
+    let sx = (this.refs.minibox.offsetLeft + 1) * 4 * this.initScale;
+    let sy = (this.refs.minibox.offsetTop + 1) * 4 * this.initScale;
+
+    let canvas = this.refs.canvas;
+    let { width, height } = canvas
+    let k = this._infos.k
+    let downSample = this._thumbnail[k] / canvas[k] / this._zoom
+
+    this._left = ((this._thumbnail.width - width * downSample) / 2 - sx) / this._thumbnail[k];
+    this._top = ((this._thumbnail.height - height * downSample) / 2 - sy) / this._thumbnail[k];
+    this._changed = true;
+  }
+
+  _setOverviewCanvasSize() {
+    let canvas = this.refs.canvas;
+    let { width, height } = canvas
+    let k = this._infos.k
+    let downSample = this._thumbnail[k] / canvas[k] / this._zoom
+    let w = this._thumbnail.width / downSample > width ? width * downSample : this._thumbnail.width
+    let h = this._thumbnail.height / downSample > height ? height * downSample : this._thumbnail.height
+    let sx = Math.max((this._thumbnail.width - width * downSample) / 2 - this._left * this._thumbnail[k], 0)
+    let sy = Math.max((this._thumbnail.height - height * downSample) / 2 - this._top * this._thumbnail[k], 0)
+    let dw = w / downSample
+    let dh = h / downSample
+    let dx = (width - dw) / 2 + this._thumbnail[k] / downSample * this._left + (sx - (this._thumbnail.width - w) / 2) / downSample
+    let dy = (height - dh) / 2 + this._thumbnail[k] / downSample * this._top + (sy - (this._thumbnail.height - h) / 2) / downSample
+    let sw = Math.min((width - dx) * downSample, w, this._thumbnail.width - sx)
+    let sh = Math.min((height - dy) * downSample, h, this._thumbnail.height - sy)
+    dw = sw / downSample
+    dh = sh / downSample
+    
+    this.refs.overview.width = dw / 4
+    this.refs.overview.height = dh / 4
+    this.initScale = downSample
+  }
+
+  _renderMiniBox(sx, sy, sw, sh) {
+    let minibox = this.refs.minibox;
+    minibox.style.left = (sx / this.initScale / 4 - 1) + 'px';
+    minibox.style.top = (sy / this.initScale / 4 - 1) + 'px';
+    minibox.style.width = sw / this.initScale / 4 + 'px';
+    minibox.style.height = sh / this.initScale /  4 + 'px';
+  }
+
+  _renderOverview() {
+    this._setOverviewCanvasSize()
+
+    let canvas = this.refs.overview
+    let ctx = canvas.getContext('2d')
+
+    let { width, height } = canvas
+    if (this._degree % 180 !== 0) [width, height] = [height, width]
+    ctx.clearRect(0, 0, width, height)
+    
+    let k = this._infos.k
+    let downSample = this._thumbnail[k] / canvas[k] / this._zoom
+    let w = this._thumbnail.width / downSample > width ? width * downSample : this._thumbnail.width
+    let h = this._thumbnail.height / downSample > height ? height * downSample : this._thumbnail.height
+
+    let sx = Math.max((this._thumbnail.width - width * downSample) / 2 - this._left * this._thumbnail[k], 0)
+    let sy = Math.max((this._thumbnail.height - height * downSample) / 2 - this._top * this._thumbnail[k], 0)
+    let dw = w / downSample
+    let dh = h / downSample
+    let dx = (width - dw) / 2 + this._thumbnail[k] / downSample * this._left + (sx - (this._thumbnail.width - w) / 2) / downSample
+    let dy = (height - dh) / 2 + this._thumbnail[k] / downSample * this._top + (sy - (this._thumbnail.height - h) / 2) / downSample
+    let sw = Math.min((width - dx) * downSample, w, this._thumbnail.width - sx)
+    let sh = Math.min((height - dy) * downSample, h, this._thumbnail.height - sy)
+    dw = sw / downSample
+    dh = sh / downSample
+
+    ctx.drawImage(this._thumbnail, sx, sy, sw, sh, dx, dy, dw, dh);
+    this._renderMiniBox(sx, sy, sw, sh);
   }
 
   _renderThumbnail() {
@@ -305,7 +383,9 @@ export default class Viewer extends React.Component {
 
     // https://developer.mozilla.org/zh-CN/docs/Web/API/CanvasRenderingContext2D/drawImage
     ctx.drawImage(this._thumbnail, sx, sy, sw, sh, dx, dy, dw, dh);
-    // this._renderOverview(sx, sy, sw, sh);
+    // console.log(`dx: ${dx}, dy: ${dy}, dw: ${dw}, dh: ${dh}\nsx: ${sx}, sy: ${sy}, sw: ${sw}, sh: ${sh}`);
+    this._renderMiniBox(sx, sy, sw, sh);
+
     //console.log(sx, sy, '\n', sw, sh, '\n', dx, dy, '\n', dw, dh)
     // console.timeEnd('renderThumbnail')
     let focus_x=sx+sw/2
@@ -530,6 +610,8 @@ export default class Viewer extends React.Component {
     // this.refs.typeb_button.addEventListener('click', this._click_typeb)
     // this.refs.typec_button.addEventListener('click', this._click_typec)
     this.refs.cancel_button.addEventListener('click', this._click_cancel)
+    // minibox
+    this.refs.minibox.addEventListener('mousedown', this._miniboxMouseDown)
     this._animate()
   }
 
@@ -543,6 +625,8 @@ export default class Viewer extends React.Component {
     // this.refs.typeb_button.removeEventListener('click', this._click_typeb)
     // this.refs.typec_button.removeEventListener('click', this._click_typec)
     this.refs.cancel_button.removeEventListener('click', this._click_cancel)
+    // minibox
+    this.refs.minibox.removeEventListener('mousedown', this._miniboxMouseDown)
     window.cancelAnimationFrame(this._animateId)
   }
 
@@ -724,6 +808,10 @@ export default class Viewer extends React.Component {
   }
 
   _mouseUp = e => {
+    e.preventDefault()
+    // e.stopPropagation()
+    if (this.isMouseInMinibox) this._miniboxMouseUp(e);
+
     if (e.button === 0 || e.button === 1) this._moveActive = false
     if (e.button === 2) {
       this._selActive = false
@@ -739,6 +827,54 @@ export default class Viewer extends React.Component {
       }
       this._renderCurrentSelection();
     }
+  }
+
+  _miniboxMouseDown = e => {
+    if (this._moveActive) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    this.lastX = e.clientX;
+    this.lastY = e.clientY;
+    this.isMouseInMinibox = true;
+    this.refs.minibox.onmouseup = this._miniboxMouseUp;
+    this.refs.minibox.onmousemove = this._miniboxMouseMove;
+  }
+
+  _miniboxMouseMove = e => {
+    if (this._moveActive) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!this.isMouseInMinibox) return;
+
+    this.offsetX = this.lastX - e.clientX;
+    this.offsetY = this.lastY - e.clientY;
+    this.lastX = e.clientX;
+    this.lastY = e.clientY;
+    
+    let newLeft = 0, newTop = 0;
+    newLeft = Math.max((this.refs.minibox.offsetLeft - this.offsetX), 0) + 'px';
+    newTop = Math.max((this.refs.minibox.offsetTop - this.offsetY), 0) + 'px';
+    newLeft = Math.min((this.refs.overview.width - this.refs.minibox.offsetWidth), (this.refs.minibox.offsetLeft - this.offsetX)) + 'px';
+    newTop = Math.min((this.refs.overview.height - this.refs.minibox.offsetHeight), (this.refs.minibox.offsetTop - this.offsetY)) + 'px';
+
+    this.refs.minibox.style.left = newLeft;
+    this.refs.minibox.style.top = newTop;
+    this._translateMiniboxChange();
+  }
+
+  _miniboxMouseUp = e => {
+    if (!this.isMouseInMinibox) return;
+
+    e.preventDefault();
+    // e.stopPropagation();
+
+    this.isMouseInMinibox = false;
+    this.refs.minibox.onmouseup = null;
+    this.refs.minibox.onmousemove = null;
   }
 
   _animate = () => {
@@ -810,7 +946,7 @@ export default class Viewer extends React.Component {
   updateScaleBottom = () => {
     this.refs.scalingvalbottom.innerText = this.refs.scalingval.innerText;
     const cssPixel = 150;
-    const physicalMM = cssPixel / (96 / 25.4 / devicePixelRatio) / this._zoom / this.windowscale;
+    const physicalMM = cssPixel / (25.4 / 96) / this._zoom / this.windowscale;
     if (physicalMM <= 0.5) {
       this.refs.scale.innerText = (1000 * physicalMM).toFixed(2) + 'um';
     } else {
@@ -822,8 +958,9 @@ export default class Viewer extends React.Component {
     return (
       <div ref='mainDOM' style={{ position: 'relative', width: this.props.layoutWidth, height: this.props.layoutHeight }} >
         <canvas ref='canvas' />
-        <div style={{position: 'fixed', right: '20px', top: '20px'}}>
+        <div style={{position: 'fixed', right: '500px', top: '50px'}}>
           <canvas ref='overview' />
+          <div ref='minibox' style={{position: 'absolute', width: 0, height: 0, left: 0, top: 0, border: '1px solid black', cursor: 'move'}}></div>
         </div>
         <div ref='currentsel' style={{ position: 'fixed', width: 100, height: 100, left: 0, top: 50, display: 'none', border: '2px solid blue', pointerEvents: 'none'}} />
         <div ref='dropmenu' style={{ position: 'fixed', left: 0, top: 0, border: '1px solid #666666', background: '#ffffff88'}}>
