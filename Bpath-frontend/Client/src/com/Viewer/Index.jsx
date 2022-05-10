@@ -311,6 +311,8 @@ export default class Viewer extends React.Component {
     
     this.refs.overview.width = dw / 4
     this.refs.overview.height = dh / 4
+    this.refs.overviewDiv.style.width = dw / 4 + 'px'
+    this.refs.overviewDiv.style.height = dh / 4 + 'px'
     this.initScale = downSample
   }
 
@@ -446,6 +448,8 @@ export default class Viewer extends React.Component {
       cvsLeft,
       cvsTop,
     }
+    this.props.updateCurrentState(this._currentState)
+    console.log(this._currentState)
     // console.log(sx / this._thumbnail.width * this._infos.width / globalDownSample - sx / downSample)
   }
 
@@ -801,6 +805,8 @@ export default class Viewer extends React.Component {
       e.stopPropagation()
 
       const [tx, ty] = this._cvtCoord_Screen2ImageRel(e.clientX, e.clientY);
+      console.log(`screen cord: ${e.clientX}, ${e.clientY}`)
+      console.log(`image cord: ${tx}, ${ty}`);
       this._curSelection.x2 = tx;
       this._curSelection.y2 = ty;
       this._renderCurrentSelection();
@@ -958,8 +964,8 @@ export default class Viewer extends React.Component {
     return (
       <div ref='mainDOM' style={{ position: 'relative', width: this.props.layoutWidth, height: this.props.layoutHeight }} >
         <canvas ref='canvas' />
-        <div style={{position: 'fixed', right: '500px', top: '50px'}}>
-          <canvas ref='overview' />
+        <div ref="overviewDiv" style={{position: 'fixed', right: '500px', top: '50px', border: '1px solid black'}}>
+          <canvas ref='overview'/>
           <div ref='minibox' style={{position: 'absolute', width: 0, height: 0, left: 0, top: 0, border: '1px solid black', cursor: 'move'}}></div>
         </div>
         <div ref='currentsel' style={{ position: 'fixed', width: 100, height: 100, left: 0, top: 50, display: 'none', border: '2px solid blue', pointerEvents: 'none'}} />

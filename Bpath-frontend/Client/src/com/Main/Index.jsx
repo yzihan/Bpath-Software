@@ -35,6 +35,7 @@ export default class Main extends React.Component {
     layoutHeight: getUsableHeight(),
     lowPower: false,
     highPower: false,
+    currentState: [],
   }
 
   _resize = () => this.setState({
@@ -130,6 +131,13 @@ export default class Main extends React.Component {
     }
   }
 
+  updateCurrentState = (state) => {
+    this.setState({
+      currentState: [state.sx, state.sy, state.sw, state.sh, state.dx, state.dy, state.dw, state.dh, state.cvsLeft, state.cvsTop],
+    });
+    console.log(this.state.currentState);
+  }
+
   render() {
     this.ensureResolutionLimit();
     return (
@@ -158,6 +166,7 @@ export default class Main extends React.Component {
         <Viewer ref={this.viewer} {...this.state} gazerStatus={this.props.gazerStatus} tilePath={this.props.tilePath}
           registerResolutionLimitCallback={this.registerResolutionLimitCallback}
           unregisterResolutionLimitCallback={this.unregisterResolutionLimitCallback}
+          updateCurrentState={this.updateCurrentState}
           />
         <div className='Sidebar'>
           <p className='Caption'>任务提示</p>
@@ -189,6 +198,9 @@ export default class Main extends React.Component {
               <label htmlFor='high-power-lim'>高倍镜（最多放大400倍=物镜40倍）</label>
               <input type="checkbox" id="high-power-lim" checked={this.state.highPower} readOnly onChange={this.toggleHighPower}></input>
             </div>
+          </div>
+          <div style={{marginTop: '30px', marginLeft: '200px'}}>
+            {this.state.currentState.map((item, index) => (<div key={index} style={{color: 'black', fontWeight: 'bold', fontSize: '11px'}}>{item.toFixed(6)}</div>))}
           </div>
         </div>
       </div>

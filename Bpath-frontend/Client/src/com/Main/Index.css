@@ -36,12 +36,13 @@
     font-family: 'Source Han Sans', 'Microsoft YaHei UI', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: #e5e5ea;
     overflow-y: auto;
-    border-left: #707070 solid 1px;
+    /* border-left: #707070 solid 1px; */
 }
 
 .Sidebar .Card {
     margin: 30px;
     margin-top: 0;
+    margin-bottom: 0;
     padding: 25px;
     background: #ffffff;
     border-radius: 10px;
